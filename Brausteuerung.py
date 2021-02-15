@@ -6,7 +6,7 @@ import busio
 import digitalio
 import adafruit_max31865
 import sys
-import tkinter
+#import tkinter
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -107,11 +107,11 @@ def HoldTemperature(Temperature, Duration, Hysteresis):
     print ("{} Time over".format(Timestamp()))
     
 def PrintGraph():
-    #matplotlib.use('tkagg')
-    matplotlib.use('Agg')
+    matplotlib.use('tkagg')
+    #matplotlib.use('Agg')
 
     # Anzahl der Messpunkte anzeigen
-    print("Anzahl Meßpunkte: {}".format(len(TempList))
+    print("Anzahl Meßpunkte: {}".format(len(TempList)))
 
     # Style benutzen (überschreibt einige eigene Definitionen)
     #plt.style.use('fivethirtyeight')
@@ -144,11 +144,11 @@ def PrintGraph():
     plt.ylabel("Temperatur [Grad C]", fontdict = font2)
     plt.grid(axis = 'y')
     # Nur mit Agg
-    plt.savefig('TempVerlauf.png', bbox_inches='tight')
+    #plt.savefig('TempVerlauf.png', bbox_inches='tight')
 
     # Nur mit Tkgg auf Headless Device
-    #plt.show()
-    #plt.savefig(sys.stdout.buffer)
+    plt.show()
+    plt.savefig(sys.stdout.buffer)
     sys.stdout.flush()
 
     
