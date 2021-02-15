@@ -5,7 +5,7 @@ import board
 import busio
 import digitalio
 import adafruit_max31865
-import sys
+#import sys
 #import tkinter
 import matplotlib
 import matplotlib.pyplot as plt
@@ -104,7 +104,21 @@ def HoldTemperature(Temperature, Duration, Hysteresis):
         print('{} Temperature: {:0.3f} C'.format(Timestamp(), temp))
         # Delay 1 Second
         time.sleep(1.0)
-    print ("{} Time over".format(Timestamp()))
+    print("{} Time over".format(Timestamp()))
+    
+def makeJodprobe(jTemperature, jDuration, jHysteresis):
+    userInput = str(input("Jodprobe erfolgreich? j/n: "))
+    while ((userInput != "j") and (userInput != "n")):
+        # Eingabe wiederholen
+        userInput = str(input("Jodprobe erfolgreich? j/n: "))
+    if userInput == "n":
+        # Zeit auf der Temperaturstufe wird verlängert
+        HoldTemperature(jTemperature, jDuration, jHysteresis)
+        # Jodprobe war nicht erfolgreich und muss ggf. wiederholt werden
+        return False
+    else:
+        # Jodprobe war erfolgreich
+        return True
     
 def PrintGraph():
     matplotlib.use('tkagg')
@@ -118,18 +132,18 @@ def PrintGraph():
     plt.style.use('seaborn-darkgrid')
 
     # Zeichne Ist-Temperatur
-    ypoints1 = np.array(TempList)
-    plt.plot(ypoints1, marker = '.', label=r'Ist Temp.')
+    yPoints1 = np.array(TempList)
+    plt.plot(yPoints1, marker = '.', label=r'Ist Temp.')
     # Zeichne Soll-Temperatur
-    ypoints2 = np.array(SollList)
-    plt.plot(ypoints2, marker = '.', label=r'Soll Temp.')
+    yPoints2 = np.array(SollList)
+    plt.plot(yPoints2, marker = '.', label=r'Soll Temp.')
 
     # Array mit Anzahl Meßpunkte erzeugen
-    x = np.arange(0.,len(TempList),1)
+    xPoints = np.arange(0.,len(TempList),1)
     # Fläche oberhalb blau einfärben und mit Label beschriften
-    plt.fill_between(x, ypoints1, ypoints2, where=(ypoints1 > ypoints2), interpolate=True, color='blue', alpha=.1, label='Kühlphase(n)')
+    plt.fill_between(xPoints, yPoints1, yPoints2, where=(yPoints1 > yPoints2), interpolate=True, color='blue', alpha=.1, label='Kühlphase(n)')
     # Fläche oberhalb rot einfärben und mit Label beschriften
-    plt.fill_between(x, ypoints1, ypoints2, where=(ypoints1 <= ypoints2), interpolate=True, color='red', alpha=.1, label='Heizphase(n)')
+    plt.fill_between(xPoints, yPoints1, yPoints2, where=(yPoints1 <= yPoints2), interpolate=True, color='red', alpha=.1, label='Heizphase(n)')
 
     # Legende einblenden:
     plt.legend(loc='upper left', frameon=False)
@@ -148,19 +162,25 @@ def PrintGraph():
 
     # Nur mit Tkgg auf Headless Device
     plt.show()
-    plt.savefig(sys.stdout.buffer)
-    sys.stdout.flush()
+    #plt.savefig(sys.stdout.buffer)
+    #sys.stdout.flush()
 
     
 Mash = {
-    #Hysterese
+    #Hysterese[Grad C] - optional
     "Hyst" : 0.3,
-    # Einmaischtemperatur
+    # Verlängerung Jodprobe [min] - optional
+    "TimeAdd" : 1,
+    # Einmaischtemperatur [Grad C]
     "Temp1" : 45,
+    "Name1" : "Einmaischen",
+    # Dauer [min]
     "Duration1" : 1,
     # Eiweissrast
     "Temp2" : 50,
-    "Duration2" : 1
+    "Name2" : "Eiweißrast",
+    "Duration2" : 1,
+    "Jodprobe2" : True
     }
 
 # Rote Steckdose - Heizung
@@ -178,8 +198,14 @@ try:
     Hysteresis = Mash["Hyst"]
 except:
     Hysteresis = 0.2
-text= "{} Grad Hysterese"
-print (text.format(Hysteresis))
+print ("{} Grad Hysterese".format(Hysteresis))
+
+# zusätzliche Zeit für Jodprobe ermitteln
+try:
+    TimeAdd = Mash["TimeAdd"]
+except:
+    TimeAdd = 10
+print ("{} min extra wenn Jodprobe negativ".format(TimeAdd))
 
 # Temperaturrasten ansteuern
 x = 1
@@ -190,6 +216,15 @@ while (True):
         # Prüfen, ob es einen Eintrag (Temperatur und Dauer) gibt
         if (Mash[temp] > 0) and (Mash[dur] > 0):
             HoldTemperature(Mash[temp], Mash[dur], Hysteresis)
+            # Jodprobe erforderlich?
+            try:
+                jodProbe = "Jodprobe" + str(x)
+                if Mash[jodProbe] == True:
+                    # Jodprobe so lange durchführen, bis erfolgreich
+                    while makeJodprobe(Mash[temp], TimeAdd, Hysteresis) != True:
+                        pass
+            except:
+                pass
             #Nächster Eintrag
             x = x+1
     except:
@@ -198,6 +233,7 @@ while (True):
         print(text.format(Timestamp(),x))
         # Alles ausschalten
         RedSwitch.Off()
+        BlueSwitch.Off()
         
         # Ergebnis plotten
         PrintGraph()
