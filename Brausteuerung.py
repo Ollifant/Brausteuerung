@@ -11,9 +11,19 @@ import numpy as np
 
 # GPIO ueber Nummern ansprechen
 GPIO.setmode(GPIO.BCM)
-
 # Warnungen ausschalten
 GPIO.setwarnings(False)
+
+# Initialize MAX31865 board
+spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
+# Chip select of the MAX31865 board GPIO 23
+cs = digitalio.DigitalInOut(board.D23)  
+Sensor = adafruit_max31865.MAX31865(spi, cs)
+
+# Rote Steckdose GPIO
+redGPIO = 17
+# Blaue Steckdose GPIO
+blueGPIO = 18
 
 def Timestamp():
     # Funktion ermittelt die aktuelle Zeit in hh:mm:ss
@@ -51,8 +61,8 @@ class Switch:
 class Brew:
     def __init__(self, heizGPIO, ruehrGPIO):
         #Leere Listen erzeugen
-        self.TempList = [float]
-        self.SollList = [float]
+        self.TempList = []
+        self.SollList = []
         # Rote Steckdose - Heizung
         self.RedSwitch = Switch(heizGPIO, "RedSwitch")
         # Blaue Steckdos - Rührer
@@ -103,7 +113,6 @@ class Brew:
         print("{} Time over".format(Timestamp()))
         
     def makeJodprobe(self, jTemperature, jDuration, jHysteresis):
-        print("Jodprobe jetzt")
         self.userInput = str(input("Jodprobe erfolgreich? j/n: "))
         while ((self.userInput != "j") and (self.userInput != "n")):
             # Eingabe wiederholen
@@ -146,7 +155,7 @@ class Brew:
                         self.jodProbe = "Jodprobe" + str(self.x)
                         if Mash[self.jodProbe] == True:
                             # Jodprobe so lange durchführen, bis erfolgreich
-                            print("Jodprobe machen temp: {} TimeAdd: {} Hysteresis: {}".format(Mash[self.tempX], self.TimeAdd, self.Hysteresis))
+                            #print("Jodprobe machen temp: {} TimeAdd: {} Hysteresis: {}".format(Mash[self.tempX], self.TimeAdd, self.Hysteresis))
                             while (self.makeJodprobe(Mash[self.tempX], self.TimeAdd, self.Hysteresis) != True):
                                 pass
                     except:
@@ -159,18 +168,16 @@ class Brew:
                 # Alles ausschalten
                 self.RedSwitch.Off()
                 self.BlueSwitch.Off()
-                
-                # Ergebnis plotten
-                #self.PrintGraph()
                 break
-       
+        # Ergebnis plotten
+        self.PrintGraph()
         
     def PrintGraph(self):
         matplotlib.use('tkagg')
         #matplotlib.use('Agg')
 
         # Anzahl der Messpunkte anzeigen
-        print("Anzahl Meßpunkte: {}".format(len(self.TempList)))
+        #print("Anzahl Meßpunkte: {}".format(len(self.TempList)))
 
         # Style benutzen (überschreibt einige eigene Definitionen)
         #plt.style.use('fivethirtyeight')
@@ -209,14 +216,6 @@ class Brew:
         plt.show()
         #plt.savefig(sys.stdout.buffer)
         #sys.stdout.flush()
-
-        
-# Initialize MAX31865 board
-spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
-# Chip select of the MAX31865 board GPIO 23
-cs = digitalio.DigitalInOut(board.D23)  
-Sensor = adafruit_max31865.MAX31865(spi, cs)
-
     
 Mash = {
     #Hysterese[Grad C] - optional
@@ -234,11 +233,6 @@ Mash = {
     "Duration2" : 1,
     "Jodprobe2" : True
     }
-
-# Rote Steckdose GPIO
-redGPIO = 17
-# Blaue Steckdose GPIO
-blueGPIO = 18
 
 # Main
 # Brauprogramm initialisieren
