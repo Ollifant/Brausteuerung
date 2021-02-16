@@ -5,8 +5,6 @@ import board
 import busio
 import digitalio
 import adafruit_max31865
-#import sys
-#import tkinter
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
