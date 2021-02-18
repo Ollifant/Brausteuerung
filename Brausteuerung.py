@@ -8,6 +8,7 @@ import adafruit_max31865
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import json
 
 # GPIO ueber Nummern ansprechen
 GPIO.setmode(GPIO.BCM)
@@ -63,19 +64,42 @@ class Brew:
         #Leere Listen erzeugen
         self.TempList = []
         self.SollList = []
+        self.xList = []
+        
+        # Datei, in der die Messwerte gespeichert werden
+        self.csvDataFile = 'Messwerte.csv'
+        
+        # Zähler der Daten in CSV Datei
+        self.counterRow = 0
+        # Letzter Temperatur-Meßwert
+        self.lastTemp = 0
+        
         # Rote Steckdose - Heizung
         self.RedSwitch = Switch(heizGPIO, "RedSwitch")
+        
         # Blaue Steckdos - Rührer
         self.BlueSwitch = Switch(ruehrGPIO, "BlueSwitch")
+        
         # Rührwerk einschalten
         self.BlueSwitch.On()
 
     def ReadTemperature(self, SollTemp):  
-        # Temperatur auslesen
+        # Temperatur auslesen und auf eine Nachkommastelle runden
         self.SensorTemp = float(Sensor.temperature)
-        # Temperatur(en) der Liste(n) hinzufügen
-        self.TempList.append(self.SensorTemp)
-        self.SollList.append(SollTemp)
+        self.SensorTemp = round(self.SensorTemp, 1)
+        
+        if self.SensorTemp != self.lastTemp:
+            #Nur neue Temperaturwerte werden gespeichert
+            self.TempList.append(self.SensorTemp)
+            self.SollList.append(SollTemp)
+            self.xList.append(self.counterRow )
+            
+            # Aktuelle Temperatur für den nächsten Vergleich speichern
+            self.lastTemp = self.SensorTemp
+        
+        # Zähler für den nächsten Meßpunkt erhöhen
+        self.counterRow = self.counterRow +1
+        
         # Return Temperature
         return self.SensorTemp
         
@@ -168,16 +192,23 @@ class Brew:
                 # Alles ausschalten
                 self.RedSwitch.Off()
                 self.BlueSwitch.Off()
+                # CSV Datei schreiben und schließen
+                self.WriteCSV()
                 break
         # Ergebnis plotten
         self.PrintGraph()
         
+    def WriteCSV(self):
+        # CSV Datei zum Schreiben öffnen und Werte eintragen
+        self.csvFile = open(self.csvDataFile , "w")
+        for self.x in range(0, len(self.xList)):
+            self.csvFile.write("{},{},{}\r".format(self.xList[self.x], self.TempList[self.x], self.SollList[self.x]))
+        #Datei schließen   
+        self.csvFile.close()
+        
     def PrintGraph(self):
         matplotlib.use('tkagg')
         #matplotlib.use('Agg')
-
-        # Anzahl der Messpunkte anzeigen
-        #print("Anzahl Meßpunkte: {}".format(len(self.TempList)))
 
         # Style benutzen (überschreibt einige eigene Definitionen)
         #plt.style.use('fivethirtyeight')
@@ -191,7 +222,7 @@ class Brew:
         plt.plot(self.yPoints2, marker = '.', label=r'Soll Temp.')
 
         # Array mit Anzahl Meßpunkte erzeugen
-        self.xPoints = np.arange(0.,len(self.TempList),1)
+        self.xPoints = np.array(self.xList)
         # Fläche oberhalb blau einfärben und mit Label beschriften
         plt.fill_between(self.xPoints, self.yPoints1, self.yPoints2, where=(self.yPoints1 > self.yPoints2), interpolate=True, color='blue', alpha=.1, label='Kühlphase(n)')
         # Fläche oberhalb rot einfärben und mit Label beschriften
