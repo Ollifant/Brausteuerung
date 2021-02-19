@@ -1,0 +1,20 @@
+{
+    "csvDataFile" : "Messwerte.csv",
+    "timeSleep" : 1.0,
+    "Hysterese" : 0.2,
+    "ZeitJodprobe" : 1,
+    "Brau": [
+        {
+        "Name" : "Einmaischtemperatur",
+        "Temperatur" : 45,
+        "Dauer" : 1,
+        "Jodprobe" : false
+        },
+        {
+        "Name" : "Eiweißrast",
+        "Temperatur" : 55,
+        "Dauer" : 1,
+        "Jodprobe" : true
+        }
+    ]
+}

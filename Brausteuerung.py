@@ -80,9 +80,34 @@ class Brew:
         # Blaue Steckdos - Rührer
         self.BlueSwitch = Switch(ruehrGPIO, "BlueSwitch")
         
-        # Rührwerk einschalten
-        self.BlueSwitch.On()
 
+    def importConfig(self):
+        # Json Configurationsdatei einlesen
+        with open("config.json") as self.file:
+            self.configData = json.load(self.file)
+        
+        print("CSV Datei:",self.configData["csvDataFile"])
+        print("Abtastrate:",self.configData["timeSleep"])
+        print("Hysterese:",self.configData["Hysterese"])
+        print("Jodprobe [min]:",self.configData["ZeitJodprobe"])
+
+        for self.item in self.configData['Brau']:
+            print(self.item['Name'], "Temperatur:", self.item['Temperatur'], "Dauer:",self.item['Dauer'], "Jodprobe:", self.item['Jodprobe'])#
+        
+        return self.userInputJN("Ist die Konfiguration korrekt?")
+        
+    def userInputJN(self, question):
+        # Ja / Nein Frage stellen
+        self.userInput = str(input(str("{} j/n: ".format(question))))
+        while ((self.userInput != "j") and (self.userInput != "n")):
+            # Eingabe wiederholen
+            self.userInput = str(input(str("{} j/n: ".format(question))))
+        if self.userInput == "n":
+            return False
+        else:
+            return True
+        
+        
     def ReadTemperature(self, SollTemp):  
         # Temperatur auslesen und auf eine Nachkommastelle runden
         self.SensorTemp = float(Sensor.temperature)
@@ -137,11 +162,8 @@ class Brew:
         print("{} Time over".format(Timestamp()))
         
     def makeJodprobe(self, jTemperature, jDuration, jHysteresis):
-        self.userInput = str(input("Jodprobe erfolgreich? j/n: "))
-        while ((self.userInput != "j") and (self.userInput != "n")):
-            # Eingabe wiederholen
-            self.userInput = str(input("Jodprobe erfolgreich? j/n: "))
-        if self.userInput == "n":
+        # User muss Jodprobe machen
+        if self.userInputJN("Jodprobe erfolgreich?") == False:
             # Zeit auf der Temperaturstufe wird verlängert
             self.HoldTemperature(jTemperature, jDuration, jHysteresis)
             # Jodprobe war nicht erfolgreich und muss ggf. wiederholt werden
@@ -151,50 +173,22 @@ class Brew:
             return True
         
     def mashing(self):
-        #Hysterese ermitteln
-        try:
-            self.Hysteresis = Mash["Hyst"]
-        except:
-            self.Hysteresis = 0.2
-        print("{} Grad Hysterese".format(self.Hysteresis))
-
-        # zusätzliche Zeit für Jodprobe ermitteln
-        try:
-            self.TimeAdd = Mash["TimeAdd"]
-        except:
-            self.TimeAdd = 10
-        print("{} min extra wenn Jodprobe negativ".format(self.TimeAdd))
-
+        # Rührwerk einschalten
+        self.BlueSwitch.On()
+        
         # Temperaturrasten ansteuern
-        self.x = 1
-        while (True):
-            try:
-                self.tempX = "Temp" + str(self.x)
-                self.durX = "Duration" + str(self.x)
-                # Prüfen, ob es einen Eintrag (Temperatur und Dauer) gibt
-                if (Mash[self.tempX] > 0) and (Mash[self.durX] > 0):
-                    self.HoldTemperature(Mash[self.tempX], Mash[self.durX], self.Hysteresis)
-                    # Jodprobe erforderlich?
-                    try:
-                        self.jodProbe = "Jodprobe" + str(self.x)
-                        if Mash[self.jodProbe] == True:
-                            # Jodprobe so lange durchführen, bis erfolgreich
-                            #print("Jodprobe machen temp: {} TimeAdd: {} Hysteresis: {}".format(Mash[self.tempX], self.TimeAdd, self.Hysteresis))
-                            while (self.makeJodprobe(Mash[self.tempX], self.TimeAdd, self.Hysteresis) != True):
-                                pass
-                    except:
-                        pass
-                    #Nächster Eintrag
-                    self.x = self.x+1
-            except:
-                self.x = self.x-1
-                print("{} Brauvorgang abgeschlossen {} Raste(n)".format(Timestamp(),self.x))
-                # Alles ausschalten
-                self.RedSwitch.Off()
-                self.BlueSwitch.Off()
-                # CSV Datei schreiben und schließen
-                self.WriteCSV()
-                break
+        for self.item in self.configData['Brau']:
+            self.HoldTemperature(self.item['Temperatur'], self.item['Dauer'], self.configData["Hysterese"])
+            if self.item['Jodprobe'] == True:
+                while self.makeJodprobe(self.item['Temperatur'], self.configData["ZeitJodprobe"], self.configData["Hysterese"]) != True:
+                    pass
+                    
+        print("{} Brauvorgang abgeschlossen {} Raste(n)".format(Timestamp(),len(self.configData['Brau'])))
+        # Alles ausschalten
+        self.RedSwitch.Off()
+        self.BlueSwitch.Off()
+        # CSV Datei schreiben und schließen
+        self.WriteCSV()
         # Ergebnis plotten
         self.PrintGraph()
         
@@ -247,27 +241,12 @@ class Brew:
         plt.show()
         #plt.savefig(sys.stdout.buffer)
         #sys.stdout.flush()
-    
-Mash = {
-    #Hysterese[Grad C] - optional
-    "Hyst" : 0.3,
-    # Verlängerung Jodprobe [min] - optional
-    "TimeAdd" : 1,
-    # Einmaischtemperatur [Grad C]
-    "Temp1" : 45,
-    "Name1" : "Einmaischen",
-    # Dauer [min]
-    "Duration1" : 1,
-    # Eiweissrast
-    "Temp2" : 50,
-    "Name2" : "Eiweißrast",
-    "Duration2" : 1,
-    "Jodprobe2" : True
-    }
 
 # Main
 # Brauprogramm initialisieren
 brew = Brew(redGPIO, blueGPIO)
 # Brauprogramm ablaufen lassen
-brew.mashing()
+if brew.importConfig() == True:
+    brew.mashing()
+
     
