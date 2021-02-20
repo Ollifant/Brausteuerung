@@ -25,17 +25,37 @@ Sensor = adafruit_max31865.MAX31865(spi, cs)
 redGPIO = 17
 # Blaue Steckdose GPIO
 blueGPIO = 18
+# Beeper GPIO
+beepGPIO = 24
 
 def Timestamp():
     # Funktion ermittelt die aktuelle Zeit in hh:mm:ss
     x = datetime.datetime.now()
     return x.strftime("%H:%M:%S")
     
+class Beeper:
+    def __init__(self, Pin):
+        self.Pin = Pin
+        # Pin als Output definieren
+        GPIO.setup(self.Pin, GPIO.OUT)
+        # Beeper ausschalten
+        GPIO.output(self.Pin, GPIO.LOW)
+        
+    def makeBeep(self, timeOn, timeOff):
+        # Schaltet den Beeper für eine definierte Zeit ein und danach für eine definierte Zeit aus
+        GPIO.output(self.Pin, GPIO.HIGH)
+        #print("Beep on")
+        time.sleep(timeOn)
+        #print("Beep off")
+        GPIO.output(self.Pin, GPIO.LOW)
+        time.sleep(timeOff)
+        
+    
 class Switch:
     def __init__(self, Pin, Name):
         self.Pin = Pin
         self.Name = Name
-        #Pin als Output definieren
+        # Pin als Output definieren
         GPIO.setup(self.Pin, GPIO.OUT)
         # Steckdose schalten HIGH = AUS!!!
         GPIO.output(self.Pin, GPIO.HIGH)
@@ -60,7 +80,7 @@ class Switch:
             print("{} {} Off".format(Timestamp(), self.Name))
             
 class Brew:
-    def __init__(self, heizGPIO, ruehrGPIO):
+    def __init__(self, heizGPIO, ruehrGPIO, beeperGPIO):
         #Leere Listen erzeugen
         self.TempList = []
         self.SollList = []
@@ -79,6 +99,9 @@ class Brew:
         
         # Blaue Steckdos - Rührer
         self.BlueSwitch = Switch(ruehrGPIO, "BlueSwitch")
+        
+        # Beeper
+        self.beeper = Beeper(beeperGPIO)
         
 
     def importConfig(self):
@@ -112,6 +135,16 @@ class Brew:
         # Temperatur auslesen und auf eine Nachkommastelle runden
         self.SensorTemp = float(Sensor.temperature)
         self.SensorTemp = round(self.SensorTemp, 1)
+        
+        if self.SensorTemp > 500:
+            while float(self.SensorTemp) > 500:
+                # Kein Temperatursensor angeschlossen - Alarm ausgeben
+                self.beeper.makeBeep(0.5, 0.5)
+                # Temperatur erneut lesen
+                self.SensorTemp = float(Sensor.temperature)
+                self.SensorTemp = round(self.SensorTemp, 1)
+                
+            
         
         if self.SensorTemp != self.lastTemp:
             #Nur neue Temperaturwerte werden gespeichert
@@ -163,6 +196,9 @@ class Brew:
         
     def makeJodprobe(self, jTemperature, jDuration, jHysteresis):
         # User muss Jodprobe machen
+        # Aufmerksamkeitston
+        self.beeper.makeBeep(1, 0)
+        # Wenn Jodprobe nicht erfolgreich, dann Raste verlängern
         if self.userInputJN("Jodprobe erfolgreich?") == False:
             # Zeit auf der Temperaturstufe wird verlängert
             self.HoldTemperature(jTemperature, jDuration, jHysteresis)
@@ -244,7 +280,7 @@ class Brew:
 
 # Main
 # Brauprogramm initialisieren
-brew = Brew(redGPIO, blueGPIO)
+brew = Brew(redGPIO, blueGPIO, beepGPIO)
 # Brauprogramm ablaufen lassen
 if brew.importConfig() == True:
     brew.mashing()
