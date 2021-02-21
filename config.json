@@ -1,5 +1,6 @@
 {
     "csvDataFile" : "Messwerte.csv",
+    "DatabaseFile" : "Brauer.db",
     "timeSleep" : 1.0,
     "Hysterese" : 0.2,
     "ZeitJodprobe" : 1,

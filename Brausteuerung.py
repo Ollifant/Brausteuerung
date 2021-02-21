@@ -9,6 +9,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import json
+import sqlite3
+import os.path
 
 # GPIO ueber Nummern ansprechen
 GPIO.setmode(GPIO.BCM)
@@ -86,9 +88,6 @@ class Brew:
         self.SollList = []
         self.xList = []
         
-        # Datei, in der die Messwerte gespeichert werden
-        self.csvDataFile = 'Messwerte.csv'
-        
         # Zähler der Daten in CSV Datei
         self.counterRow = 0
         # Letzter Temperatur-Meßwert
@@ -96,12 +95,36 @@ class Brew:
         
         # Rote Steckdose - Heizung
         self.RedSwitch = Switch(heizGPIO, "RedSwitch")
-        
         # Blaue Steckdos - Rührer
         self.BlueSwitch = Switch(ruehrGPIO, "BlueSwitch")
         
         # Beeper
         self.beeper = Beeper(beeperGPIO)
+        
+        #Datenbank initialisieren
+        self.initDB()
+        
+    def initDB(self):
+        # Prüfen, ob es die Datenbank gibt
+        if os.path.isfile('Brauer.db'):
+            print("Datenbank vorhanden")
+            # mit Datenbank verbinden
+            self.conn = sqlite3.connect('Brauer.db')
+            # DB Curor erzeugen
+            self.dbcCursor = self.conn.cursor()
+            with self.conn:
+                # Alte Messwerte löschen, indem Tabelle gedroppt wird
+                self.dbcCursor.execute("DROP TABLE Messwerte")
+                print("Alte Messerte gelöscht")
+        else:
+            print("Neue Datenbank anlegen")
+            # mit Datenbank verbinden
+            self.conn = sqlite3.connect('Brauer.db')
+            # DB Curor erzeugen
+            self.dbcCursor = self.conn.cursor()
+            
+        # Tabelle für die neuen Meßwerte anlegen
+        self.dbcCursor.execute("CREATE TABLE Messwerte (Counter integer, IstTemp real, SollTemp real)")
         
 
     def importConfig(self):
@@ -110,6 +133,8 @@ class Brew:
             self.configData = json.load(self.file)
         
         print("CSV Datei:",self.configData["csvDataFile"])
+        # For future use
+        print("Datenbank:",self.configData["DatabaseFile"])
         print("Abtastrate:",self.configData["timeSleep"])
         print("Hysterese:",self.configData["Hysterese"])
         print("Jodprobe [min]:",self.configData["ZeitJodprobe"])
@@ -230,7 +255,7 @@ class Brew:
         
     def WriteCSV(self):
         # CSV Datei zum Schreiben öffnen und Werte eintragen
-        self.csvFile = open(self.csvDataFile , "w")
+        self.csvFile = open(self.configData["csvDataFile"], "w")
         for self.x in range(0, len(self.xList)):
             self.csvFile.write("{},{},{}\r".format(self.xList[self.x], self.TempList[self.x], self.SollList[self.x]))
         #Datei schließen   
@@ -283,6 +308,7 @@ class Brew:
 brew = Brew(redGPIO, blueGPIO, beepGPIO)
 # Brauprogramm ablaufen lassen
 if brew.importConfig() == True:
-    brew.mashing()
+    #brew.mashing()
+    print("Fertig")
 
     
