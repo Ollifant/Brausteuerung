@@ -11,6 +11,17 @@ import numpy as np
 import json
 import sqlite3
 import os.path
+# --------------Display Libs ------------
+from luma.core.interface.serial import i2c
+from luma.core.render import canvas
+from luma.oled.device import sh1106, ssd1306
+from PIL import ImageFont, ImageDraw, Image
+# ---------------------------------------
+
+#OLED Display auf I2C Bus initialisieren
+serial = i2c(port=1, address=0x3C)
+device = sh1106(serial)
+oled_font = ImageFont.truetype('FreeSans.ttf', 14)
 
 # GPIO ueber Nummern ansprechen
 GPIO.setmode(GPIO.BCM)
@@ -156,6 +167,17 @@ class Brew:
             return True
         
         
+    def write_display(self, istTemperatur, sollTemperatur, text1, text2):
+        with canvas(device) as draw:
+            #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
+            draw.text((15, 0), "Ist :", font = oled_font, fill = "white")
+            draw.text((50, 0), "{} C".format(istTemperatur), font = oled_font, fill = "white")
+            draw.text((15, 20), "Soll:", font = oled_font, fill="white")
+            draw.text((50, 20), "{:0.1f} C".format(sollTemperatur), font = oled_font, fill="white")
+            draw.text((15, 40), text1, font = oled_font, fill="white")
+            draw.text((50, 40), text2, font = oled_font, fill="white")
+            
+            
     def ReadTemperature(self, SollTemp):  
         # Temperatur auslesen und auf eine Nachkommastelle runden
         self.SensorTemp = float(Sensor.temperature)
@@ -168,8 +190,6 @@ class Brew:
                 # Temperatur erneut lesen
                 self.SensorTemp = float(Sensor.temperature)
                 self.SensorTemp = round(self.SensorTemp, 1)
-                
-            
         
         if self.SensorTemp != self.lastTemp:
             #Nur neue Temperaturwerte werden gespeichert
@@ -189,12 +209,14 @@ class Brew:
     def HoldTemperature(self, Temperature, Duration, Hysteresis):
         print ("{} Solltemperatur {} Dauer {} Minute(n)".format(Timestamp(),Temperature, Duration))
         # Aufheizen, bis Temperatur erreocht
-        print ("{} Aufheizen auf {} Grad".format(Timestamp(), Temperature))
+        #print ("{} Aufheizen auf {} Grad".format(Timestamp(), Temperature))
         self.temp = self.ReadTemperature(Temperature)
         while self.temp < Temperature:
             # Schaltet Heizung ein, wenn vorher aus
             self.RedSwitch.On()
-            print('{} Temperature: {:0.3f} C'.format(Timestamp(), self.temp))
+            #print('{} Temperature: {:0.3f} C'.format(Timestamp(), self.temp))
+            # Temperatur auf Display anzeigen
+            self.write_display(self.temp, Temperature, " ---- ", "aufheizen")
             # Dealy 1 second
             time.sleep(1.0)
             # Temperatur neu lesen
@@ -204,9 +226,12 @@ class Brew:
         self.StartTime = time.time()
         self.EndTime = self.StartTime + (Duration * 60)
          
-        print("{} Temperatur {} Grad für {} Minute(n) halten".format(Timestamp(), Temperature, Duration))
+        #print("{} Temperatur {} Grad für {} Minute(n) halten".format(Timestamp(), Temperature, Duration))
         while self.EndTime > time.time():
             self.temp = self.ReadTemperature(Temperature)
+            # Temperaturen & Zeit auf Display anzeigen
+            self.write_display(self.temp, Temperature, "Zeit:", "{}".format(self.get_hms(self.EndTime - time.time())))
+                
             if self.temp < (Temperature - Hysteresis):
                 # Temperatur ist kleiner Solltemperatur minus Hysterese
                 # Heizung einschalten
@@ -214,7 +239,7 @@ class Brew:
             else:
                 # Heizung ausschalten
                 self.RedSwitch.Off()
-            print('{} Temperature: {:0.3f} C'.format(Timestamp(), self.temp))
+            #print('{} Temperature: {:0.3f} C'.format(Timestamp(), self.temp))
             # Delay 1 Second
             time.sleep(1.0)
         print("{} Time over".format(Timestamp()))
@@ -222,7 +247,10 @@ class Brew:
     def makeJodprobe(self, jTemperature, jDuration, jHysteresis):
         # User muss Jodprobe machen
         # Aufmerksamkeitston
-        self.beeper.makeBeep(1, 0)
+        self.beeper.makeBeep(0.5, 0)
+        with canvas(device) as draw:
+            #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
+            draw.text((15, 10), "Jodprobe !!!", font = oled_font, fill = "white")
         # Wenn Jodprobe nicht erfolgreich, dann Raste verlängern
         if self.userInputJN("Jodprobe erfolgreich?") == False:
             # Zeit auf der Temperaturstufe wird verlängert
@@ -248,6 +276,11 @@ class Brew:
         # Alles ausschalten
         self.RedSwitch.Off()
         self.BlueSwitch.Off()
+        # Brauende auf Display anzeigen
+        with canvas(device) as draw:
+            #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
+            draw.text((10, 15), "Brauvorgang", font = oled_font, fill = "white")
+            draw.text((10, 40), "abgeschlossen", font = oled_font, fill = "white")
         # CSV Datei schreiben und schließen
         self.WriteCSV()
         # Ergebnis plotten
@@ -302,13 +335,20 @@ class Brew:
         plt.show()
         #plt.savefig(sys.stdout.buffer)
         #sys.stdout.flush()
+        
+    def get_hms(self, delta):
+        # Return hours, minutes and seconds for a given `timedelta`-object.
+        h, m = divmod(delta, 3600)
+        m, s = divmod(m, 60)
+        return ("{:0>2d}:{:0>2d}:{:0>2d}".format(int(h), int(m), int(s)))
+    
 
 # Main
 # Brauprogramm initialisieren
 brew = Brew(redGPIO, blueGPIO, beepGPIO)
 # Brauprogramm ablaufen lassen
 if brew.importConfig() == True:
-    #brew.mashing()
+    brew.mashing()
     print("Fertig")
 
     
