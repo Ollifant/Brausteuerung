@@ -1,21 +1,23 @@
 {
-    "csvDataFile" : "Messwerte.csv",
-    "DatabaseFile" : "Brauer.db",
-    "timeSleep" : 1.0,
-    "Hysterese" : 0.2,
-    "ZeitJodprobe" : 1,
     "Brau": [
         {
-        "Name" : "Einmaischtemperatur",
-        "Temperatur" : 45,
-        "Dauer" : 1,
-        "Jodprobe" : false
+            "Name": "Einmaischtemperatur",
+            "Temperatur": 45,
+            "Dauer": 1,
+            "Jodprobe": false
         },
         {
-        "Name" : "Eiweißrast",
-        "Temperatur" : 55,
-        "Dauer" : 1,
-        "Jodprobe" : true
+            "Name": "Eiwei\u00dfrast",
+            "Temperatur": 55,
+            "Dauer": 1,
+            "Jodprobe": true
         }
-    ]
+    ],
+    "csvDataFile": "Messwerte.csv",
+    "DatabaseFile": "Brauer.db",
+    "timeSleep": 1.0,
+    "Hysterese": 0.2,
+    "ZeitJodprobe": 1,
+    "csvAusgabe": false,
+    "plotAusgabe": false
 }
