@@ -93,7 +93,7 @@ class Switch:
             # Steckdose schalten LOW = AN!!!
             GPIO.output(self.Pin, GPIO.LOW)
             self.State = True
-            print("{} {} On".format(Timestamp(), self.Name))
+            #print("{} {} On".format(Timestamp(), self.Name))
     
     def Off(self):
         # Wenn Steckdose an, dann ausschalten
@@ -101,7 +101,7 @@ class Switch:
             # Steckdose schalten High = AUS!!!
             GPIO.output(self.Pin, GPIO.HIGH)
             self.State = False
-            print("{} {} Off".format(Timestamp(), self.Name))
+            #print("{} {} Off".format(Timestamp(), self.Name))
             
 class Brew:
     def __init__(self, heizGPIO, ruehrGPIO, beeperGPIO, dreh1GPIO, dreh2GPIO, pushGPIO):
@@ -152,24 +152,28 @@ class Brew:
             
         # Tabelle für die neuen Meßwerte anlegen
         self.dbcCursor.execute("CREATE TABLE Messwerte (Counter integer, IstTemp real, SollTemp real)")
-        
+        self.conn.commit()
 
     def importConfig(self):
-        # Json Configurationsdatei einlesen
-        with open("config.json") as self.file:
-            self.configData = json.load(self.file)
-        
-        print("CSV Datei:",self.configData["csvDataFile"])
-        # For future use
-        print("Datenbank:",self.configData["DatabaseFile"])
-        print("Abtastrate:",self.configData["timeSleep"])
-        print("Hysterese:",self.configData["Hysterese"])
-        print("Jodprobe [min]:",self.configData["ZeitJodprobe"])
+        try:
+            # Json Configurationsdatei einlesen
+            with open("config.json") as self.file:
+                self.configData = json.load(self.file)
+            
+            print("CSV Datei:",self.configData["csvDataFile"])
+            print("Abtastrate:",self.configData["timeSleep"])
+            print("Hysterese:",self.configData["Hysterese"])
+            print("Jodprobe [min]:",self.configData["ZeitJodprobe"])
+            # For future use
+            print("Datenbank:",self.configData["DatabaseFile"])
 
-        for self.item in self.configData['Brau']:
-            print(self.item['Name'], "Temperatur:", self.item['Temperatur'], "Dauer:",self.item['Dauer'], "Jodprobe:", self.item['Jodprobe'])#
-        
-        return self.userInputJN("Ist die Konfiguration korrekt?")
+            for self.item in self.configData['Brau']:
+                print(self.item['Name'], "Temperatur:", self.item['Temperatur'], "Dauer:",self.item['Dauer'], "Jodprobe:", self.item['Jodprobe'])#
+            
+            # return self.userInputJN("Ist die Konfiguration korrekt?")
+            return True
+        except:
+            return False
         
     def userInputJN(self, question):
         # Ja / Nein Frage stellen
@@ -208,10 +212,12 @@ class Brew:
                 self.SensorTemp = round(self.SensorTemp, 1)
         
         if self.SensorTemp != self.lastTemp:
-            #Nur neue Temperaturwerte werden gespeichert
-            self.TempList.append(self.SensorTemp)
-            self.SollList.append(SollTemp)
-            self.xList.append(self.counterRow )
+            #Nur neue Temperaturwerte werden gespeichert           
+            # Werte in Datenbank/Tabelle für die Meßwerte speichern
+            self.dbcCursor.execute("""INSERT INTO Messwerte VALUES
+                                    (:Counter, :IstTemp, :SollTemp)""",
+                                    {'Counter' : self.counterRow, 'IstTemp' : self.SensorTemp, 'SollTemp' : SollTemp})
+            self.conn.commit()
             
             # Aktuelle Temperatur für den nächsten Vergleich speichern
             self.lastTemp = self.SensorTemp
@@ -232,7 +238,7 @@ class Brew:
             self.RedSwitch.On()
             #print('{} Temperature: {:0.3f} C'.format(Timestamp(), self.temp))
             # Temperatur auf Display anzeigen
-            self.write_display(self.temp, Temperature, " ---- ", "aufheizen")
+            self.write_display(self.temp, Temperature, "aufheizen", " ")
             # Dealy 1 second
             time.sleep(1.0)
             # Temperatur neu lesen
@@ -323,11 +329,29 @@ class Brew:
             #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
             draw.text((10, 15), "Brauvorgang", font = oled_font, fill = "white")
             draw.text((10, 40), "abgeschlossen", font = oled_font, fill = "white")
+        
+        # Daten aus Datenbank in Listen einlesen
+        self.readDatabaseIntoLists()
         # CSV Datei schreiben und schließen
         self.WriteCSV()
+        # Datenbank schließen
+        self.conn.close()
         # Ergebnis plotten
         self.PrintGraph()
         
+    def readDatabaseIntoLists(self):
+            self.dbcCursor.execute("SELECT * FROM Messwerte ORDER BY rowid ASC")
+            #Ersten Datensatz lesen
+            self.dbResult = self.dbcCursor.fetchone()
+            
+            while self.dbResult != None:
+                # Daten in Listen übernehmen
+                self.xList.append(int(self.dbResult[0]))
+                self.TempList.append(float(self.dbResult[1]))
+                self.SollList.append(float(self.dbResult[2]))
+                #Nächsten Datensatz lesen
+                self.dbResult = self.dbcCursor.fetchone()
+            
     def WriteCSV(self):
         # CSV Datei zum Schreiben öffnen und Werte eintragen
         self.csvFile = open(self.configData["csvDataFile"], "w")
@@ -335,6 +359,7 @@ class Brew:
             self.csvFile.write("{},{},{}\r".format(self.xList[self.x], self.TempList[self.x], self.SollList[self.x]))
         #Datei schließen   
         self.csvFile.close()
+        
         
     def PrintGraph(self):
         matplotlib.use('tkagg')
