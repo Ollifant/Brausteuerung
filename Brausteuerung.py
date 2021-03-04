@@ -164,6 +164,8 @@ class Brew:
             print("Abtastrate:",self.configData["timeSleep"])
             print("Hysterese:",self.configData["Hysterese"])
             print("Jodprobe [min]:",self.configData["ZeitJodprobe"])
+            print("CSV Ausgabe:",self.configData["csvAusgabe"])
+            print("Plot Ausgabe:", self.configData["plotAusgabe"])
             # For future use
             print("Datenbank:",self.configData["DatabaseFile"])
 
@@ -332,26 +334,31 @@ class Brew:
         
         # Daten aus Datenbank in Listen einlesen
         self.readDatabaseIntoLists()
-        # CSV Datei schreiben und schließen
-        self.WriteCSV()
+        
+        if self.configData["csvAusgabe"]:
+            # CSV Datei schreiben und schließen
+            self.WriteCSV()
+            
+        if self.configData["plotAusgabe"]:
+            # Ergebnis plotten
+            self.PrintGraph()
+            
         # Datenbank schließen
         self.conn.close()
-        # Ergebnis plotten
-        self.PrintGraph()
         
     def readDatabaseIntoLists(self):
-            self.dbcCursor.execute("SELECT * FROM Messwerte ORDER BY rowid ASC")
-            #Ersten Datensatz lesen
+        self.dbcCursor.execute("SELECT * FROM Messwerte ORDER BY rowid ASC")
+        #Ersten Datensatz lesen
+        self.dbResult = self.dbcCursor.fetchone()
+        
+        while self.dbResult != None:
+            # Daten in Listen übernehmen
+            self.xList.append(int(self.dbResult[0]))
+            self.TempList.append(float(self.dbResult[1]))
+            self.SollList.append(float(self.dbResult[2]))
+            #Nächsten Datensatz lesen
             self.dbResult = self.dbcCursor.fetchone()
-            
-            while self.dbResult != None:
-                # Daten in Listen übernehmen
-                self.xList.append(int(self.dbResult[0]))
-                self.TempList.append(float(self.dbResult[1]))
-                self.SollList.append(float(self.dbResult[2]))
-                #Nächsten Datensatz lesen
-                self.dbResult = self.dbcCursor.fetchone()
-            
+        
     def WriteCSV(self):
         # CSV Datei zum Schreiben öffnen und Werte eintragen
         self.csvFile = open(self.configData["csvDataFile"], "w")
@@ -427,5 +434,7 @@ brew = Brew(redGPIO, blueGPIO, beepGPIO, encoderDrehGPIO_1, encoderDrehGPIO_2, e
 if brew.importConfig() == True:
     brew.mashing()
     print("Fertig")
+else:
+    print("Konfiguration ungültig")
 
     
