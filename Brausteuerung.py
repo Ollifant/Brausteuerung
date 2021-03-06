@@ -138,20 +138,23 @@ class Brew:
             # mit Datenbank verbinden
             self.conn = sqlite3.connect('Brauer.db')
             # DB Curor erzeugen
-            self.dbcCursor = self.conn.cursor()
+            self.dbCursor = self.conn.cursor()
             with self.conn:
                 # Alte Messwerte löschen, indem Tabelle gedroppt wird
-                self.dbcCursor.execute("DROP TABLE Messwerte")
+                self.dbCursor.execute("DROP TABLE Messwerte")
                 print("Alte Messerte gelöscht")
         else:
             print("Neue Datenbank anlegen")
             # mit Datenbank verbinden
             self.conn = sqlite3.connect('Brauer.db')
             # DB Curor erzeugen
-            self.dbcCursor = self.conn.cursor()
+            self.dbCursor = self.conn.cursor()
+            # Tabelle für die Rezepte anlegen
+            self.dbCursor.execute("CREATE TABLE Rasten (Name text, SollTemp real, Dauer real, Jodprobe integer)")
+            self.conn.commit()
             
         # Tabelle für die neuen Meßwerte anlegen
-        self.dbcCursor.execute("CREATE TABLE Messwerte (Counter integer, IstTemp real, SollTemp real)")
+        self.dbCursor.execute("CREATE TABLE Messwerte (Counter integer, IstTemp real, SollTemp real)")
         self.conn.commit()
 
     def importConfig(self):
@@ -169,9 +172,6 @@ class Brew:
             # For future use
             print("Datenbank:",self.configData["DatabaseFile"])
 
-            for self.item in self.configData['Brau']:
-                print(self.item['Name'], "Temperatur:", self.item['Temperatur'], "Dauer:",self.item['Dauer'], "Jodprobe:", self.item['Jodprobe'])#
-            
             # return self.userInputJN("Ist die Konfiguration korrekt?")
             return True
         except:
@@ -216,7 +216,7 @@ class Brew:
         if self.SensorTemp != self.lastTemp:
             #Nur neue Temperaturwerte werden gespeichert           
             # Werte in Datenbank/Tabelle für die Meßwerte speichern
-            self.dbcCursor.execute("""INSERT INTO Messwerte VALUES
+            self.dbCursor.execute("""INSERT INTO Messwerte VALUES
                                     (:Counter, :IstTemp, :SollTemp)""",
                                     {'Counter' : self.counterRow, 'IstTemp' : self.SensorTemp, 'SollTemp' : SollTemp})
             self.conn.commit()
@@ -316,13 +316,20 @@ class Brew:
         self.BlueSwitch.On()
         
         # Temperaturrasten ansteuern
-        for self.item in self.configData['Brau']:
-            self.HoldTemperature(self.item['Temperatur'], self.item['Dauer'], self.configData["Hysterese"])
-            if self.item['Jodprobe'] == True:
-                while self.makeJodprobe(self.item['Temperatur'], self.configData["ZeitJodprobe"], self.configData["Hysterese"]) != True:
+        self.dbCursor.execute("SELECT * FROM Rasten ORDER BY rowid ASC")
+        # Rasten auslesen
+        self.Rasten = self.dbCursor.fetchall()
+        
+        for self.Raste in self.Rasten:
+            print(self.Raste)
+            self.HoldTemperature(self.Raste[1], self.Raste[2], self.configData["Hysterese"])
+            if self.Raste[3] == True:
+                while self.makeJodprobe(self.Raste[1], self.configData["ZeitJodprobe"], self.configData["Hysterese"]) != True:
+                    print("{} Jodprobe wiederholen".format(Timestamp()))
                     pass
+    
                     
-        print("{} Brauvorgang abgeschlossen {} Raste(n)".format(Timestamp(),len(self.configData['Brau'])))
+        print("{} Brauvorgang abgeschlossen".format(Timestamp()))
         # Alles ausschalten
         self.RedSwitch.Off()
         self.BlueSwitch.Off()
@@ -347,9 +354,9 @@ class Brew:
         self.conn.close()
         
     def readDatabaseIntoLists(self):
-        self.dbcCursor.execute("SELECT * FROM Messwerte ORDER BY rowid ASC")
+        self.dbCursor.execute("SELECT * FROM Messwerte ORDER BY rowid ASC")
         #Ersten Datensatz lesen
-        self.dbResult = self.dbcCursor.fetchone()
+        self.dbResult = self.dbCursor.fetchone()
         
         while self.dbResult != None:
             # Daten in Listen übernehmen
@@ -357,7 +364,7 @@ class Brew:
             self.TempList.append(float(self.dbResult[1]))
             self.SollList.append(float(self.dbResult[2]))
             #Nächsten Datensatz lesen
-            self.dbResult = self.dbcCursor.fetchone()
+            self.dbResult = self.dbCursor.fetchone()
         
     def WriteCSV(self):
         # CSV Datei zum Schreiben öffnen und Werte eintragen
