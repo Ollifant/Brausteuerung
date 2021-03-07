@@ -143,20 +143,47 @@ class Brew:
                 # Alte Messwerte löschen, indem Tabelle gedroppt wird
                 self.dbCursor.execute("DROP TABLE Messwerte")
                 print("Alte Messerte gelöscht")
+                # Alten Status löschen
+                self.dbCursor.execute("DROP TABLE Status")
+                print("Alten Status gelöscht")
         else:
             print("Neue Datenbank anlegen")
             # mit Datenbank verbinden
             self.conn = sqlite3.connect('Brauer.db')
             # DB Curor erzeugen
             self.dbCursor = self.conn.cursor()
-            # Tabelle für die Rezepte anlegen
+            # Tabelle für die Rasten anlegen
             self.dbCursor.execute("CREATE TABLE Rasten (Name text, SollTemp real, Dauer real, Jodprobe integer)")
             self.conn.commit()
             
         # Tabelle für die neuen Meßwerte anlegen
         self.dbCursor.execute("CREATE TABLE Messwerte (Counter integer, IstTemp real, SollTemp real)")
         self.conn.commit()
+        
+        # Tabelle für den Status anlegen
+        self.dbCursor.execute("CREATE TABLE Status (Braustatus text, State text)")
+        # Status setzen
+        self.dbCursor.execute("INSERT INTO Status VALUES (:Braustatus, :Status)", {'Braustatus' : "Brewstate", 'Status' : "Wait"})
+        self.conn.commit()
 
+    def wait4go(self):
+        # Prüfen, ob Braudatenbank aktualisiert wurde
+        self.dbCursor.execute("SELECT State FROM Status WHERE Braustatus = :BState", {'BState' : 'Brewstate'})
+        self.Result = self.dbCursor.fetchone()
+        if self.Result[0] != 'Go':
+            with canvas(device) as draw:
+                #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
+                draw.text((15, 0), "Warten auf", font = oled_font, fill = "white")
+                draw.text((15, 20), "Brauverlauf", font = oled_font, fill = "white")
+            time.sleep(1)
+            return False
+        else:
+            # Neuen Status setzen
+            self.dbCursor.execute("""UPDATE Status SET State = :State WHERE Braustatus = :BState""",
+                                  {'State' : 'Running', 'BState' : 'Brewstate'})
+            self.conn.commit()
+            return True
+        
     def importConfig(self):
         try:
             # Json Configurationsdatei einlesen
@@ -312,6 +339,10 @@ class Brew:
             return True
         
     def mashing(self):
+        # Warten, dass Rasten definiert sind
+        while self.wait4go() == False:
+            pass
+        
         # Rührwerk einschalten
         self.BlueSwitch.On()
         
@@ -319,6 +350,10 @@ class Brew:
         self.dbCursor.execute("SELECT * FROM Rasten ORDER BY rowid ASC")
         # Rasten auslesen
         self.Rasten = self.dbCursor.fetchall()
+        if self.Rasten == []:
+            print("Keine Rasten in DB")
+        else:
+            print(self.Rasten)
         
         for self.Raste in self.Rasten:
             print(self.Raste)
@@ -333,6 +368,12 @@ class Brew:
         # Alles ausschalten
         self.RedSwitch.Off()
         self.BlueSwitch.Off()
+        
+        # Status in Datenbank setzen
+        self.dbCursor.execute("""UPDATE Status SET State = :State WHERE Braustatus = :BState""",
+                             {'State' : 'Done', 'BState' : 'Brewstate'})
+        self.conn.commit()
+        
         # Brauende auf Display anzeigen
         with canvas(device) as draw:
             #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
