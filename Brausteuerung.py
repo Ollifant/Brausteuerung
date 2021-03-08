@@ -156,19 +156,21 @@ class Brew:
             self.dbCursor.execute("CREATE TABLE Rasten (Name text, SollTemp real, Dauer real, Jodprobe integer)")
             self.conn.commit()
             
-        # Tabelle für die neuen Meßwerte anlegen
-        self.dbCursor.execute("CREATE TABLE Messwerte (Counter integer, IstTemp real, SollTemp real)")
-        self.conn.commit()
-        
-        # Tabelle für den Status anlegen
-        self.dbCursor.execute("CREATE TABLE Status (Braustatus text, State text)")
-        # Status setzen
-        self.dbCursor.execute("INSERT INTO Status VALUES (:Braustatus, :Status)", {'Braustatus' : "Brewstate", 'Status' : "Wait"})
-        self.conn.commit()
+        with self.conn:
+            # Tabelle für die neuen Meßwerte anlegen
+            self.dbCursor.execute("CREATE TABLE Messwerte (Counter integer, IstTemp real, SollTemp real)")
+            
+            # Tabelle für den Status anlegen
+            self.dbCursor.execute("CREATE TABLE Status (StateName text, State text)")
+            # Status setzen
+            self.dbCursor.execute("INSERT INTO Status VALUES (:Braustatus, :Status)", {'Braustatus' : "Brewstate", 'Status' : "Wait"})
+            self.dbCursor.execute("INSERT INTO Status VALUES (:Jodprobe, :Status)", {'Jodprobe' : "Jodprobe", 'Status' : "None"})
+            
 
     def wait4go(self):
         # Prüfen, ob Braudatenbank aktualisiert wurde
-        self.dbCursor.execute("SELECT State FROM Status WHERE Braustatus = :BState", {'BState' : 'Brewstate'})
+        print("Warte auf Rasten")
+        self.dbCursor.execute("SELECT State FROM Status WHERE StateName = :BState", {'BState' : 'Brewstate'})
         self.Result = self.dbCursor.fetchone()
         if self.Result[0] != 'Go':
             with canvas(device) as draw:
@@ -179,7 +181,7 @@ class Brew:
             return False
         else:
             # Neuen Status setzen
-            self.dbCursor.execute("""UPDATE Status SET State = :State WHERE Braustatus = :BState""",
+            self.dbCursor.execute("""UPDATE Status SET State = :State WHERE StateName = :BState""",
                                   {'State' : 'Running', 'BState' : 'Brewstate'})
             self.conn.commit()
             return True
@@ -297,6 +299,12 @@ class Brew:
         
     def makeJodprobe(self, jTemperature, jDuration, jHysteresis):
         # User muss Jodprobe machen
+        # Das Ergebnis der Jodprobe kann über den Schalter des Encoders oder über die Datenbank eingegeben werden
+        
+        # Status in DB setzen
+        self.dbCursor.execute("UPDATE Status SET State = :Status WHERE StateName = :BState",{'Status' : 'Wait', 'BState' : 'Jodprobe'})
+        self.conn.commit()
+        
         # Aufmerksamkeitston
         self.beeper.makeBeep(0.5, 0)
         
@@ -306,7 +314,12 @@ class Brew:
         self.buttonState = False
         self.anzeige = "Ergebnis: Nein"
         self.result = False
-        while self.buttonState != True:
+        
+        self.dbCursor.execute("SELECT State FROM Status WHERE StateName = 'Jodprobe'")
+        self.jResult = self.dbCursor.fetchone()
+        
+        # Der buttonState wird in der Interupt-Routine geändert
+        while (self.buttonState != True) and (self.jResult[0] == "Wait"):
             with canvas(device) as draw:
                 #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
                 draw.text((15, 0), "Jodprobe", font = oled_font, fill = "white")
@@ -325,8 +338,29 @@ class Brew:
             
                 draw.text((15, 40), self.anzeige, font = oled_font, fill = "white")
                 time.sleep(0.25)
-                #Stellung des Encoders erneut lesen
+                # Stellung des Encoders erneut lesen
                 self.DrehZahl = self.dreh.read()
+                
+                # Status der Jodprobe aus DB lesen
+                self.dbCursor.execute("SELECT State FROM Status WHERE StateName = 'Jodprobe'")
+                self.jResult = self.dbCursor.fetchone()
+                
+                # Prüfen, ob ein ungültiger Status vorliegt
+                if (self.jResult[0] != 'Positive') and (self.jResult[0] != 'Negative') and (self.jResult[0] != 'Wait'):
+                    # Status ist ungültig - wird ignoriert
+                    print("Ungültiger Status: " + str(self.jResult[0]))
+                    self.jResult = ('Wait', )
+                    # Status in DB überschreiben
+                    self.dbCursor.execute("UPDATE Status SET State = :Status WHERE StateName = :BState",
+                                          {'Status' : 'Wait', 'BState' : 'Jodprobe'})
+                    self.conn.commit()
+                    
+                if self.jResult[0] == 'Positive':
+                    print("Jodprobe war erfolgreich")
+                    self.result = True
+                elif self.jResult[0] == 'Negative':
+                    print("Jodprobe war nicht erfolgreich")
+                    self.result = False
         
         # Wenn Jodprobe nicht erfolgreich, dann Raste verlängern
         if self.result == False:
@@ -370,7 +404,7 @@ class Brew:
         self.BlueSwitch.Off()
         
         # Status in Datenbank setzen
-        self.dbCursor.execute("""UPDATE Status SET State = :State WHERE Braustatus = :BState""",
+        self.dbCursor.execute("""UPDATE Status SET State = :State WHERE StateName = :BState""",
                              {'State' : 'Done', 'BState' : 'Brewstate'})
         self.conn.commit()
         
