@@ -11,6 +11,7 @@ import numpy as np
 import json
 import sqlite3
 import os.path
+import logging
 # --------------Display Libs ------------
 from luma.core.interface.serial import i2c
 from luma.core.render import canvas
@@ -52,10 +53,35 @@ encoderDrehGPIO_2 = 15
 # Encoder Push GPIO
 encoderPushGPIO = 25
 
-def Timestamp():
-    # Funktion ermittelt die aktuelle Zeit in hh:mm:ss
-    x = datetime.datetime.now()
-    return x.strftime("%H:%M:%S")
+
+# Logger erstellen
+logger = logging.getLogger('Brew')
+logger.setLevel(logging.DEBUG)
+
+# Console handler erstellen und Log-Level setzen
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+# Formatter erstellen
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
+                                datefmt='%H:%M:%S')
+
+# Formatter zu console handler hinzufügen
+ch.setFormatter(formatter)
+
+# Console Handler zu Logger hinzufügen
+logger.addHandler(ch)
+
+# File Handler erstellen und Log-Level setzen
+fh = logging.FileHandler('brewing.log', mode= 'w')
+fh.setLevel(logging.DEBUG)
+fh.setFormatter(formatter)
+logger.addHandler(fh)
+
+# def Timestamp():
+#     # Funktion ermittelt die aktuelle Zeit in hh:mm:ss
+#     x = datetime.datetime.now()
+#     return x.strftime("%H:%M:%S")
     
 class Beeper:
     def __init__(self, Pin):
@@ -68,9 +94,9 @@ class Beeper:
     def makeBeep(self, timeOn, timeOff):
         # Schaltet den Beeper für eine definierte Zeit ein und danach für eine definierte Zeit aus
         GPIO.output(self.Pin, GPIO.HIGH)
-        #print("Beep on")
+        logger.debug("Beep on")
         time.sleep(timeOn)
-        #print("Beep off")
+        logger.debug("Beep off")
         GPIO.output(self.Pin, GPIO.LOW)
         time.sleep(timeOff)
         
@@ -85,7 +111,7 @@ class Switch:
         GPIO.output(self.Pin, GPIO.HIGH)
         # Status der Steckdose ist ausgeschaltet
         self.State = False
-        print("Init {} at Pin {}".format(self.Name, self.Pin))
+        logger.info("Init {} at Pin {}".format(self.Name, self.Pin))
 
     def On(self):
         # Wenn Steckdose aus, dann einschalten
@@ -93,7 +119,7 @@ class Switch:
             # Steckdose schalten LOW = AN!!!
             GPIO.output(self.Pin, GPIO.LOW)
             self.State = True
-            #print("{} {} On".format(Timestamp(), self.Name))
+            logger.debug("{} On".format(self.Name))
     
     def Off(self):
         # Wenn Steckdose an, dann ausschalten
@@ -101,7 +127,7 @@ class Switch:
             # Steckdose schalten High = AUS!!!
             GPIO.output(self.Pin, GPIO.HIGH)
             self.State = False
-            #print("{} {} Off".format(Timestamp(), self.Name))
+            logger.debug("{} Off".format(self.Name))
             
 class Brew:
     def __init__(self, heizGPIO, ruehrGPIO, beeperGPIO, dreh1GPIO, dreh2GPIO, pushGPIO):
@@ -134,7 +160,7 @@ class Brew:
     def initDB(self):
         # Prüfen, ob es die Datenbank gibt
         if os.path.isfile('Brauer.db'):
-            print("Datenbank vorhanden")
+            logger.info("Datenbank vorhanden")
             # mit Datenbank verbinden
             self.conn = sqlite3.connect('Brauer.db')
             # DB Curor erzeugen
@@ -142,12 +168,12 @@ class Brew:
             with self.conn:
                 # Alte Messwerte löschen, indem Tabelle gedroppt wird
                 self.dbCursor.execute("DROP TABLE Messwerte")
-                print("Alte Messerte gelöscht")
+                logger.info("Alte Messerte gelöscht")
                 # Alten Status löschen
                 self.dbCursor.execute("DROP TABLE Status")
-                print("Alten Status gelöscht")
+                logger.info("Alten Status gelöscht")
         else:
-            print("Neue Datenbank anlegen")
+            logger.info("Neue Datenbank anlegen")
             # mit Datenbank verbinden
             self.conn = sqlite3.connect('Brauer.db')
             # DB Curor erzeugen
@@ -169,7 +195,7 @@ class Brew:
 
     def wait4go(self):
         # Prüfen, ob Braudatenbank aktualisiert wurde
-        print("Warte auf Rasten")
+        logger.info("Warte auf Rasten")
         self.dbCursor.execute("SELECT State FROM Status WHERE StateName = :BState", {'BState' : 'Brewstate'})
         self.Result = self.dbCursor.fetchone()
         if self.Result[0] != 'Go':
@@ -191,15 +217,15 @@ class Brew:
             # Json Configurationsdatei einlesen
             with open("config.json") as self.file:
                 self.configData = json.load(self.file)
-            
-            print("CSV Datei:",self.configData["csvDataFile"])
-            print("Abtastrate:",self.configData["timeSleep"])
-            print("Hysterese:",self.configData["Hysterese"])
-            print("Jodprobe [min]:",self.configData["ZeitJodprobe"])
-            print("CSV Ausgabe:",self.configData["csvAusgabe"])
-            print("Plot Ausgabe:", self.configData["plotAusgabe"])
+                
+            logger.info("CSV Datei: {}".format(self.configData["csvDataFile"]))
+            logger.info("Abtastrate: {}".format(self.configData["timeSleep"]))
+            logger.info("Hysterese: {}".format(self.configData["Hysterese"]))
+            logger.info("Jodprobe [min]: {}".format(self.configData["ZeitJodprobe"]))
+            logger.info("CSV Ausgabe: {}".format(self.configData["csvAusgabe"]))
+            logger.info("Plot Ausgabe: {}".format(self.configData["plotAusgabe"]))
             # For future use
-            print("Datenbank:",self.configData["DatabaseFile"])
+            logger.info("Datenbank: {}".format(self.configData["DatabaseFile"]))
 
             # return self.userInputJN("Ist die Konfiguration korrekt?")
             return True
@@ -260,14 +286,14 @@ class Brew:
         return self.SensorTemp
         
     def HoldTemperature(self, Temperature, Duration, Hysteresis):
-        print ("{} Solltemperatur {} Dauer {} Minute(n)".format(Timestamp(),Temperature, Duration))
-        # Aufheizen, bis Temperatur erreocht
-        #print ("{} Aufheizen auf {} Grad".format(Timestamp(), Temperature))
+        logger.info("Solltemperatur {} Dauer {} Minute(n)".format(Temperature, Duration))
+        # Aufheizen, bis Temperatur erreicht
+        logger.debug("Aufheizen auf {} Grad".format(Temperature))
         self.temp = self.ReadTemperature(Temperature)
         while self.temp < Temperature:
             # Schaltet Heizung ein, wenn vorher aus
             self.RedSwitch.On()
-            #print('{} Temperature: {:0.3f} C'.format(Timestamp(), self.temp))
+            logger.debug('Temperature: {:0.3f} C'.format(self.temp))
             # Temperatur auf Display anzeigen
             self.write_display(self.temp, Temperature, "aufheizen", " ")
             # Dealy 1 second
@@ -279,7 +305,7 @@ class Brew:
         self.StartTime = time.time()
         self.EndTime = self.StartTime + (Duration * 60)
          
-        #print("{} Temperatur {} Grad für {} Minute(n) halten".format(Timestamp(), Temperature, Duration))
+        logger.debug("Temperatur {} Grad für {} Minute(n) halten".format(Temperature, Duration))
         while self.EndTime > time.time():
             self.temp = self.ReadTemperature(Temperature)
             # Temperaturen & Zeit auf Display anzeigen
@@ -292,10 +318,10 @@ class Brew:
             else:
                 # Heizung ausschalten
                 self.RedSwitch.Off()
-            #print('{} Temperature: {:0.3f} C'.format(Timestamp(), self.temp)
+            logger.debug('Temperature: {:0.3f} C'.format(self.temp))
             # Delay 1 Second
             time.sleep(1.0)
-        #print("{} Time over".format(Timestamp()))
+        logger.debug("Time over")
         
     def makeJodprobe(self, jTemperature, jDuration, jHysteresis):
         # User muss Jodprobe machen
@@ -348,7 +374,7 @@ class Brew:
                 # Prüfen, ob ein ungültiger Status vorliegt
                 if (self.jResult[0] != 'Positive') and (self.jResult[0] != 'Negative') and (self.jResult[0] != 'Wait'):
                     # Status ist ungültig - wird ignoriert
-                    print("Ungültiger Status: " + str(self.jResult[0]))
+                    logger.error("Ungültiger Status: {}".format(str(self.jResult[0])))
                     self.jResult = ('Wait', )
                     # Status in DB überschreiben
                     self.dbCursor.execute("UPDATE Status SET State = :Status WHERE StateName = :BState",
@@ -356,10 +382,10 @@ class Brew:
                     self.conn.commit()
                     
                 if self.jResult[0] == 'Positive':
-                    print("Jodprobe war erfolgreich")
+                    logger.info("Jodprobe war erfolgreich")
                     self.result = True
                 elif self.jResult[0] == 'Negative':
-                    print("Jodprobe war nicht erfolgreich")
+                    logger.info("Jodprobe war nicht erfolgreich")
                     self.result = False
         
         # Wenn Jodprobe nicht erfolgreich, dann Raste verlängern
@@ -385,20 +411,20 @@ class Brew:
         # Rasten auslesen
         self.Rasten = self.dbCursor.fetchall()
         if self.Rasten == []:
-            print("Keine Rasten in DB")
+            logger.info("Keine Rasten in DB")
         else:
-            print(self.Rasten)
+            logger.info(self.Rasten)
         
         for self.Raste in self.Rasten:
-            print(self.Raste)
+            logger.info(self.Raste)
             self.HoldTemperature(self.Raste[1], self.Raste[2], self.configData["Hysterese"])
             if self.Raste[3] == True:
                 while self.makeJodprobe(self.Raste[1], self.configData["ZeitJodprobe"], self.configData["Hysterese"]) != True:
-                    print("{} Jodprobe wiederholen".format(Timestamp()))
+                    logger.info("Jodprobe wiederholen")
                     pass
     
                     
-        print("{} Brauvorgang abgeschlossen".format(Timestamp()))
+        logger.info("Brauvorgang abgeschlossen")
         # Alles ausschalten
         self.RedSwitch.Off()
         self.BlueSwitch.Off()
@@ -515,8 +541,8 @@ brew = Brew(redGPIO, blueGPIO, beepGPIO, encoderDrehGPIO_1, encoderDrehGPIO_2, e
 # Brauprogramm ablaufen lassen
 if brew.importConfig() == True:
     brew.mashing()
-    print("Fertig")
+    logger.info("Fertig")
 else:
-    print("Konfiguration ungültig")
+    logger.info("Konfiguration ungültig")
 
     
