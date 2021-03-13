@@ -246,13 +246,16 @@ class Brew:
         
     def write_display(self, istTemperatur, sollTemperatur, text1, text2):
         with canvas(device) as draw:
-            #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
-            draw.text((15, 0), "Ist :", font = oled_font, fill = "white")
-            draw.text((50, 0), "{} C".format(istTemperatur), font = oled_font, fill = "white")
-            draw.text((15, 20), "Soll:", font = oled_font, fill="white")
-            draw.text((50, 20), "{:0.1f} C".format(sollTemperatur), font = oled_font, fill="white")
-            draw.text((15, 40), text1, font = oled_font, fill="white")
-            draw.text((50, 40), text2, font = oled_font, fill="white")
+            try:
+                #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
+                draw.text((15, 0), "Ist :", font = oled_font, fill = "white")
+                draw.text((50, 0), "{} C".format(istTemperatur), font = oled_font, fill = "white")
+                draw.text((15, 20), "Soll:", font = oled_font, fill="white")
+                draw.text((50, 20), "{:0.1f} C".format(sollTemperatur), font = oled_font, fill="white")
+                draw.text((15, 40), text1, font = oled_font, fill="white")
+                draw.text((50, 40), text2, font = oled_font, fill="white")
+            except:
+                logging.error("Fehler beim Schreiben auf Display")
             
             
     def ReadTemperature(self, SollTemp):  
@@ -347,22 +350,26 @@ class Brew:
         # Der buttonState wird in der Interupt-Routine geändert
         while (self.buttonState != True) and (self.jResult[0] == "Wait"):
             with canvas(device) as draw:
-                #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
-                draw.text((15, 0), "Jodprobe", font = oled_font, fill = "white")
-                draw.text((15, 20), "erfolgreich?", font = oled_font, fill = "white")
-                if ((self.DrehZahl > (self.AlteZahl + 6)) or (self.DrehZahl < (self.AlteZahl - 6))):
-                    # Stellung des Encoders hat sich signifikant geändert
-                    # Anzeige ändern
-                    if self.anzeige == 'Ergebnis: Ja':
-                        self.anzeige = "Ergebnis: Nein"
-                        self.result = False
-                    else: 
-                        self.anzeige = "Ergebnis: Ja"
-                        self.result = True
-                    # Neu Zahl speichern
-                    self.AlteZahl = self.DrehZahl
-            
-                draw.text((15, 40), self.anzeige, font = oled_font, fill = "white")
+                try:
+                    #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
+                    draw.text((15, 0), "Jodprobe", font = oled_font, fill = "white")
+                    draw.text((15, 20), "erfolgreich?", font = oled_font, fill = "white")
+                    if ((self.DrehZahl > (self.AlteZahl + 6)) or (self.DrehZahl < (self.AlteZahl - 6))):
+                        # Stellung des Encoders hat sich signifikant geändert
+                        # Anzeige ändern
+                        if self.anzeige == 'Ergebnis: Ja':
+                            self.anzeige = "Ergebnis: Nein"
+                            self.result = False
+                        else: 
+                            self.anzeige = "Ergebnis: Ja"
+                            self.result = True
+                        # Neu Zahl speichern
+                        self.AlteZahl = self.DrehZahl
+                
+                    draw.text((15, 40), self.anzeige, font = oled_font, fill = "white")
+                except:
+                    logging.error("Fehler beim Schreiben auf Display")
+                    
                 time.sleep(0.25)
                 # Stellung des Encoders erneut lesen
                 self.DrehZahl = self.dreh.read()
