@@ -12,6 +12,7 @@ import json
 import sqlite3
 import os.path
 import logging
+import traceback
 # --------------Display Libs ------------
 from luma.core.interface.serial import i2c
 from luma.core.render import canvas
@@ -21,10 +22,19 @@ from PIL import ImageFont, ImageDraw, Image
 
 # --------------Encoder Lib -------------
 # pip3 install encoder (um die Lib zu installieren
+# CLK - Clock
+# DT  - Direction
+# SW  - Push button switch control
+# +   - 3.3V
+# GND - Ground
 import Encoder
 # ---------------------------------------
 
 #OLED Display auf I2C Bus initialisieren
+# Vcc - 3.3V
+# Gnd - Ground
+# SCL - I2C SCL
+# SDA - I2C SCA
 serial = i2c(port=1, address=0x3C)
 device = sh1106(serial)
 oled_font = ImageFont.truetype('FreeSans.ttf', 14)
@@ -35,6 +45,14 @@ GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
 # Initialize MAX31865 board
+# Pi 3V3 to sensor VIN
+# Pi GND to sensor GND
+# Pi MOSI to sensor SDI
+# Pi MISO to sensor SDO
+# Pi SCLK to sensor CLK
+# Pi GPIO23 to sensor CS (or use any other free GPIO pin)
+# The I2C interface is disabled by default so you need to enable it. You can do this within the raspi-config tool on the command line by running :
+# sudo raspi-config
 spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
 # Chip select of the MAX31865 board GPIO 23
 cs = digitalio.DigitalInOut(board.D23)  
@@ -46,6 +64,8 @@ redGPIO = 17
 blueGPIO = 18
 # Beeper GPIO
 beepGPIO = 24
+
+
 # Encoder GPIO 1
 encoderDrehGPIO_1 = 14
 # Encoder GPIO 2
@@ -111,7 +131,7 @@ class Switch:
         GPIO.output(self.Pin, GPIO.HIGH)
         # Status der Steckdose ist ausgeschaltet
         self.State = False
-        logger.info("Init {} at Pin {}".format(self.Name, self.Pin))
+        logger.info(f"Init {self.Name} at Pin {self.Pin}")
 
     def On(self):
         # Wenn Steckdose aus, dann einschalten
@@ -119,7 +139,7 @@ class Switch:
             # Steckdose schalten LOW = AN!!!
             GPIO.output(self.Pin, GPIO.LOW)
             self.State = True
-            logger.debug("{} On".format(self.Name))
+            logger.debug(f"{self.Name} On")
     
     def Off(self):
         # Wenn Steckdose an, dann ausschalten
@@ -127,7 +147,7 @@ class Switch:
             # Steckdose schalten High = AUS!!!
             GPIO.output(self.Pin, GPIO.HIGH)
             self.State = False
-            logger.debug("{} Off".format(self.Name))
+            logger.debug(f"{self.Name} Off")
             
 class Brew:
     def __init__(self, heizGPIO, ruehrGPIO, beeperGPIO, dreh1GPIO, dreh2GPIO, pushGPIO):
@@ -245,8 +265,8 @@ class Brew:
         
         
     def write_display(self, istTemperatur, sollTemperatur, text1, text2):
-        with canvas(device) as draw:
-            try:
+        try:
+            with canvas(device) as draw:
                 #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
                 draw.text((15, 0), "Ist :", font = oled_font, fill = "white")
                 draw.text((50, 0), "{} C".format(istTemperatur), font = oled_font, fill = "white")
@@ -254,10 +274,18 @@ class Brew:
                 draw.text((50, 20), "{:0.1f} C".format(sollTemperatur), font = oled_font, fill="white")
                 draw.text((15, 40), text1, font = oled_font, fill="white")
                 draw.text((50, 40), text2, font = oled_font, fill="white")
-            except:
-                logging.error("Fehler beim Schreiben auf Display")
+        except:
+            logging.error(f"Fehler beim Schreiben auf Display: {traceback.format_exc()}")
+                
             
-            
+    def clear_display(self):
+        try:
+            with canvas(device) as draw:
+                draw.text((15, 0), " ", font = oled_font, fill = "white")
+        except:
+            logging.error(f"Fehler beim Schreiben auf Display: {traceback.format_exc()}")
+                
+    
     def ReadTemperature(self, SollTemp):  
         # Temperatur auslesen und auf eine Nachkommastelle runden
         self.SensorTemp = float(Sensor.temperature)
@@ -289,9 +317,9 @@ class Brew:
         return self.SensorTemp
         
     def HoldTemperature(self, Temperature, Duration, Hysteresis):
-        logger.info("Solltemperatur {} Dauer {} Minute(n)".format(Temperature, Duration))
+        logger.info(f"Solltemperatur {Temperature} Dauer {Duration} Minute(n)")
         # Aufheizen, bis Temperatur erreicht
-        logger.debug("Aufheizen auf {} Grad".format(Temperature))
+        logger.debug(f"Aufheizen auf {Temperature} Grad")
         self.temp = self.ReadTemperature(Temperature)
         while self.temp < Temperature:
             # Schaltet Heizung ein, wenn vorher aus
@@ -308,7 +336,7 @@ class Brew:
         self.StartTime = time.time()
         self.EndTime = self.StartTime + (Duration * 60)
          
-        logger.debug("Temperatur {} Grad für {} Minute(n) halten".format(Temperature, Duration))
+        logger.debug(f"Temperatur {Temperature} Grad für {Duration} Minute(n) halten")
         while self.EndTime > time.time():
             self.temp = self.ReadTemperature(Temperature)
             # Temperaturen & Zeit auf Display anzeigen
@@ -349,8 +377,8 @@ class Brew:
         
         # Der buttonState wird in der Interupt-Routine geändert
         while (self.buttonState != True) and (self.jResult[0] == "Wait"):
-            with canvas(device) as draw:
-                try:
+            try:
+                with canvas(device) as draw:
                     #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
                     draw.text((15, 0), "Jodprobe", font = oled_font, fill = "white")
                     draw.text((15, 20), "erfolgreich?", font = oled_font, fill = "white")
@@ -367,34 +395,34 @@ class Brew:
                         self.AlteZahl = self.DrehZahl
                 
                     draw.text((15, 40), self.anzeige, font = oled_font, fill = "white")
-                except:
-                    logging.error("Fehler beim Schreiben auf Display")
-                    
-                time.sleep(0.25)
-                # Stellung des Encoders erneut lesen
-                self.DrehZahl = self.dreh.read()
+            except:
+                logging.error(f"Fehler beim Schreiben auf Display: {traceback.format_exc()}")
                 
-                # Status der Jodprobe aus DB lesen
-                self.dbCursor.execute("SELECT State FROM Status WHERE StateName = 'Jodprobe'")
-                self.jResult = self.dbCursor.fetchone()
+            time.sleep(0.25)
+            # Stellung des Encoders erneut lesen
+            self.DrehZahl = self.dreh.read()
+            
+            # Status der Jodprobe aus DB lesen
+            self.dbCursor.execute("SELECT State FROM Status WHERE StateName = 'Jodprobe'")
+            self.jResult = self.dbCursor.fetchone()
+            
+            # Prüfen, ob ein ungültiger Status vorliegt
+            if (self.jResult[0] != 'Positive') and (self.jResult[0] != 'Negative') and (self.jResult[0] != 'Wait'):
+                # Status ist ungültig - wird ignoriert
+                logger.error("Ungültiger Status: {}".format(str(self.jResult[0])))
+                self.jResult = ('Wait', )
+                # Status in DB überschreiben
+                self.dbCursor.execute("UPDATE Status SET State = :Status WHERE StateName = :BState",
+                                      {'Status' : 'Wait', 'BState' : 'Jodprobe'})
+                self.conn.commit()
                 
-                # Prüfen, ob ein ungültiger Status vorliegt
-                if (self.jResult[0] != 'Positive') and (self.jResult[0] != 'Negative') and (self.jResult[0] != 'Wait'):
-                    # Status ist ungültig - wird ignoriert
-                    logger.error("Ungültiger Status: {}".format(str(self.jResult[0])))
-                    self.jResult = ('Wait', )
-                    # Status in DB überschreiben
-                    self.dbCursor.execute("UPDATE Status SET State = :Status WHERE StateName = :BState",
-                                          {'Status' : 'Wait', 'BState' : 'Jodprobe'})
-                    self.conn.commit()
-                    
-                if self.jResult[0] == 'Positive':
-                    logger.info("Jodprobe war erfolgreich")
-                    self.result = True
-                elif self.jResult[0] == 'Negative':
-                    logger.info("Jodprobe war nicht erfolgreich")
-                    self.result = False
-        
+            if self.jResult[0] == 'Positive':
+                logger.info("Jodprobe war erfolgreich")
+                self.result = True
+            elif self.jResult[0] == 'Negative':
+                logger.info("Jodprobe war nicht erfolgreich")
+                self.result = False
+    
         # Wenn Jodprobe nicht erfolgreich, dann Raste verlängern
         if self.result == False:
             # Zeit auf der Temperaturstufe wird verlängert
@@ -424,9 +452,13 @@ class Brew:
         
         for self.Raste in self.Rasten:
             logger.info(self.Raste)
-            self.HoldTemperature(self.Raste[1], self.Raste[2], self.configData["Hysterese"])
-            if self.Raste[3] == True:
-                while self.makeJodprobe(self.Raste[1], self.configData["ZeitJodprobe"], self.configData["Hysterese"]) != True:
+            # Tupel entpacken
+            tRaste, tTemperature, tDuration, tJodprobe = self.Raste
+            
+            self.HoldTemperature(tTemperature, tDuration, self.configData["Hysterese"])
+            
+            if tJodprobe == True:
+                while self.makeJodprobe(tTemperature, self.configData["ZeitJodprobe"], self.configData["Hysterese"]) != True:
                     logger.info("Jodprobe wiederholen")
                     pass
     
@@ -442,10 +474,13 @@ class Brew:
         self.conn.commit()
         
         # Brauende auf Display anzeigen
-        with canvas(device) as draw:
-            #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
-            draw.text((10, 15), "Brauvorgang", font = oled_font, fill = "white")
-            draw.text((10, 40), "abgeschlossen", font = oled_font, fill = "white")
+        try:
+            with canvas(device) as draw:
+                #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
+                draw.text((10, 15), "Brauvorgang", font = oled_font, fill = "white")
+                draw.text((10, 40), "abgeschlossen", font = oled_font, fill = "white")
+        except:
+            logging.error(f"Fehler beim Schreiben auf Display: {traceback.format_exc()}")
         
         # Daten aus Datenbank in Listen einlesen
         self.readDatabaseIntoLists()
@@ -548,6 +583,8 @@ brew = Brew(redGPIO, blueGPIO, beepGPIO, encoderDrehGPIO_1, encoderDrehGPIO_2, e
 # Brauprogramm ablaufen lassen
 if brew.importConfig() == True:
     brew.mashing()
+    time.sleep(30.0)
+    brew.clear_display()
     logger.info("Fertig")
 else:
     logger.info("Konfiguration ungültig")
