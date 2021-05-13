@@ -206,13 +206,90 @@ class Brew:
             # Tabelle für die neuen Meßwerte anlegen
             self.dbCursor.execute("CREATE TABLE Messwerte (Counter integer, IstTemp real, SollTemp real)")
             
-            # Tabelle für den Status anlegen
+            # Tabelle für die Status anlegen
             self.dbCursor.execute("CREATE TABLE Status (StateName text, State text)")
             # Status setzen
             self.dbCursor.execute("INSERT INTO Status VALUES (:Braustatus, :Status)", {'Braustatus' : "Brewstate", 'Status' : "Wait"})
+            # Wenn eine Jodprobe durchgeführt werden muss, dann kann der Status von einem externen Programm über die DB geändert werden
             self.dbCursor.execute("INSERT INTO Status VALUES (:Jodprobe, :Status)", {'Jodprobe' : "Jodprobe", 'Status' : "None"})
+            # Der Modus gibt an, ob die Eingabe der Steuerungswerte manuell oder automatisch erfolgen soll - None = unbestimmt
+            # Dieser Wert kann von einem externen Programm über die Datenbank geändert werden
+            self.dbCursor.execute("INSERT INTO Status VALUES (:Modus, :Status)", {'Modus' : "Modus", 'Status' : "None"})
             
 
+    def checkManualInput(self):
+        # Das Ergebnis der Jodprobe kann über den Schalter des Encoders oder über die Datenbank eingegeben werden
+        
+        # Status in DB setzen
+        self.dbCursor.execute("UPDATE Status SET State = :Status WHERE StateName = :BState",{'Status' : 'Wait', 'BState' : 'Jodprobe'})
+        self.conn.commit()
+        
+        # Aufmerksamkeitston
+        self.beeper.makeBeep(0.5, 0)
+        
+        self.AlteZahl = 0
+        self.buttonState = False
+        self.anzeige = "automatisch"
+        self.result = True
+        
+        self.dbCursor.execute("SELECT State FROM Status WHERE StateName = 'Jodprobe'")
+        self.jResult = self.dbCursor.fetchone()
+        
+        # Der buttonState wird in der Interupt-Routine geändert
+        while (self.buttonState != True) and (self.jResult[0] == "Wait"):
+            #Stellung des Encoders lesen
+            self.DrehZahl = self.dreh.read()
+            if ((self.DrehZahl > (self.AlteZahl + 6)) or (self.DrehZahl < (self.AlteZahl - 6))):
+                # Stellung des Encoders hat sich signifikant geändert
+                # Anzeige ändern
+                if self.anzeige == 'manuell':
+                    self.anzeige = "automatisch"
+                    self.result = False
+                else: 
+                    self.anzeige = "manuell"
+                    self.result = True
+                # Neu Zahl speichern
+                        self.AlteZahl = self.DrehZahl
+            
+            try:
+                with canvas(device) as draw:
+                    #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
+                    draw.text((15, 0), "Steuerung", font = oled_font, fill = "white")
+                    draw.text((15, 20), "auto/ manuell?", font = oled_font, fill = "white")
+                    draw.text((15, 40), self.anzeige, font = oled_font, fill = "white")
+            except:
+                logging.error(f"Fehler beim Schreiben auf Display: {traceback.format_exc()}")
+                
+            time.sleep(0.25)
+            
+            # Status der Jodprobe aus DB lesen
+            self.dbCursor.execute("SELECT State FROM Status WHERE StateName = 'Modus'")
+            self.jResult = self.dbCursor.fetchone()
+            
+            # Prüfen, ob ein ungültiger Status vorliegt
+            if (self.jResult[0] != 'Automatic') and (self.jResult[0] != 'Manual') and (self.jResult[0] != 'Wait'):
+                # Status ist ungültig - wird ignoriert
+                logger.error("Ungültiger Status: {}".format(str(self.jResult[0])))
+                self.jResult = ('Wait', )
+                # Status in DB überschreiben
+                self.dbCursor.execute("UPDATE Status SET State = :Status WHERE StateName = :BState",
+                                      {'Status' : 'Wait', 'BState' : 'Modus'})
+                self.conn.commit()
+                
+            if self.jResult[0] == 'Manual':
+                logger.info("Manuelle Eingabe der Werte")
+                self.result = True
+            elif self.jResult[0] == 'Automatic':
+                logger.info("Eingabe der Werte über DB")
+                self.result = False
+    
+        if self.result == False:
+            # Steuerungswerte sollen über die Datenbank eingegeben werden
+            return False
+        else:
+            # Steuerungswerte sollen manuell eingegeben werden
+            return True
+        
     def getValue(self, textOne, textTwo, startVal, minVal):
         self.AlteZahl = 0
         # Status des Push Buttons setzen
@@ -646,8 +723,11 @@ brew = Brew(redGPIO, blueGPIO, beepGPIO, encoderDrehGPIO_1, encoderDrehGPIO_2, e
 
 # Brauprogramm ablaufen lassen
 if brew.importConfig() == True:
-    # Manual Input (Temperature & Duration)
-    brew.manualInput()
+    # Auswahl zwischen manueller oder externer Eingabe der Steuerungsdaten
+    if brew.checkManualInput() == True:
+        # Manual Input (Temperature & Duration)
+        brew.manualInput()
+        
     # Temperatursteuerung
     brew.mashing()
     # User Input: Ende bestätigen
