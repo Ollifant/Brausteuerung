@@ -213,6 +213,78 @@ class Brew:
             self.dbCursor.execute("INSERT INTO Status VALUES (:Jodprobe, :Status)", {'Jodprobe' : "Jodprobe", 'Status' : "None"})
             
 
+    def getValue(self, textOne, textTwo, startVal, minVal):
+        self.AlteZahl = 0
+        # Status des Push Buttons setzen
+        self.buttonState = False
+        # Default Wert für die Eingabe
+        self.mNum = startVal
+        
+        # Der buttonState wird in der Interupt-Routine geändert
+        while (self.buttonState != True):
+            # Stellung des Encoders lesen
+            self.DrehZahl = self.dreh.read()
+            # Encoder zählt in 4er Schritten
+            self.mNum = int(self.mNum + ((self.DrehZahl - self.AlteZahl) / 4))
+            # Eingabe soll nichtz kleiner als Null werden
+            if (self.mNum < minVal):
+                self.mNum = minVal
+                self.beeper.makeBeep(0.1, 0.1)
+            # Nur sie Änderungen des Encodes sollen berücksichtigt werden
+            self.AlteZahl = self.DrehZahl
+            self.anzeige = f"{self.mNum} {textTwo}"
+            try:
+                with canvas(device) as draw:
+                    #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
+                    draw.text((15, 0), textOne, font = oled_font, fill = "white")
+                    draw.text((15, 20), self.anzeige, font = oled_font, fill = "white")
+                    draw.text((15, 40), "Press 4 enter", font = oled_font, fill = "white")
+            except:
+                logging.error(f"Fehler beim Schreiben auf Display: {traceback.format_exc()}")
+                
+            time.sleep(0.25)
+        
+        return self.mNum
+        
+    def manualInput(self):
+        logger.info("Temperatur & Dauer manuell eingeben")
+        # Alte Werte löschen
+        self.dbCursor.execute("DELETE FROM Rasten")
+        
+        # Eingabe - Temperatur
+        self.mTemp = self.getValue("Temperatur", "Grad", 20, 10)
+        
+        #Eingabe - Dauer
+        self.mDur = self.getValue("Dauer", "Minuten", 2, 1)
+        
+        # Werte in Datenbank/Tabelle für die Meßwerte speichern
+        self.dbCursor.execute("""INSERT INTO Rasten VALUES
+                                (:Name, :SollTemp, :Dauer, :Jodprobe)""",
+                                {'Name' : 'Manuell', 'SollTemp' : self.mTemp, 'Dauer' : self.mDur, 'Jodprobe' : False})
+        
+        # Status setzen, damit Temperatursteuerung abläuft
+        self.dbCursor.execute("UPDATE Status SET State = :Status WHERE StateName = :BState",{'Status' : 'Go', 'BState' : 'Brewstate'})
+
+        self.conn.commit()
+        
+    def wait4end(self):
+        # Brauende auf Display anzeigen
+        try:
+            with canvas(device) as draw:
+                #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
+                draw.text((10, 0), "Steuerung", font = oled_font, fill = "white")
+                draw.text((10, 20), "beendet", font = oled_font, fill = "white")
+                draw.text((10, 40), "Press Button", font = oled_font, fill = "white")
+        except:
+            logging.error(f"Fehler beim Schreiben auf Display: {traceback.format_exc()}")
+            
+        # Status des Push Buttons setzen
+        self.buttonState = False
+        
+        # Der buttonState wird in der Interupt-Routine geändert
+        while (self.buttonState != True):
+            self.beeper.makeBeep(0.5, 2.0)
+        
     def wait4go(self):
         # Prüfen, ob Braudatenbank aktualisiert wurde
         logger.info("Warte auf Rasten")
@@ -473,15 +545,6 @@ class Brew:
                              {'State' : 'Done', 'BState' : 'Brewstate'})
         self.conn.commit()
         
-        # Brauende auf Display anzeigen
-        try:
-            with canvas(device) as draw:
-                #draw.rectangle(device.bounding_box, outline = "white", fill = "black")
-                draw.text((10, 15), "Brauvorgang", font = oled_font, fill = "white")
-                draw.text((10, 40), "abgeschlossen", font = oled_font, fill = "white")
-        except:
-            logging.error(f"Fehler beim Schreiben auf Display: {traceback.format_exc()}")
-        
         # Daten aus Datenbank in Listen einlesen
         self.readDatabaseIntoLists()
         
@@ -580,13 +643,18 @@ class Brew:
 # Main
 # Brauprogramm initialisieren
 brew = Brew(redGPIO, blueGPIO, beepGPIO, encoderDrehGPIO_1, encoderDrehGPIO_2, encoderPushGPIO)
+
 # Brauprogramm ablaufen lassen
 if brew.importConfig() == True:
+    # Manual Input (Temperature & Duration)
+    brew.manualInput()
+    # Temperatursteuerung
     brew.mashing()
-    time.sleep(30.0)
-    brew.clear_display()
+    # User Input: Ende bestätigen
+    brew.wait4end()
     logger.info("Fertig")
 else:
     logger.info("Konfiguration ungültig")
 
+brew.clear_display()
     
