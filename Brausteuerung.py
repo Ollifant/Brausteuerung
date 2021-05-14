@@ -218,10 +218,11 @@ class Brew:
             
 
     def checkManualInput(self):
-        # Das Ergebnis der Jodprobe kann über den Schalter des Encoders oder über die Datenbank eingegeben werden
+        # Das Ergebnis, ob die Werte manuell oder automatisch eingegeben werden sollen,
+        # kann über den Schalter des Encoders oder über die Datenbank eingegeben werden
         
         # Status in DB setzen
-        self.dbCursor.execute("UPDATE Status SET State = :Status WHERE StateName = :BState",{'Status' : 'Wait', 'BState' : 'Jodprobe'})
+        self.dbCursor.execute("UPDATE Status SET State = :Status WHERE StateName = :BState",{'Status' : 'Wait', 'BState' : 'Modus'})
         self.conn.commit()
         
         # Aufmerksamkeitston
@@ -232,8 +233,10 @@ class Brew:
         self.anzeige = "automatisch"
         self.result = True
         
-        self.dbCursor.execute("SELECT State FROM Status WHERE StateName = 'Jodprobe'")
+        self.dbCursor.execute("SELECT State FROM Status WHERE StateName = 'Modus'")
         self.jResult = self.dbCursor.fetchone()
+        
+        logger.info('Modus auswählen')
         
         # Der buttonState wird in der Interupt-Routine geändert
         while (self.buttonState != True) and (self.jResult[0] == "Wait"):
@@ -249,7 +252,7 @@ class Brew:
                     self.anzeige = "manuell"
                     self.result = True
                 # Neu Zahl speichern
-                        self.AlteZahl = self.DrehZahl
+                self.AlteZahl = self.DrehZahl
             
             try:
                 with canvas(device) as draw:
@@ -262,7 +265,7 @@ class Brew:
                 
             time.sleep(0.25)
             
-            # Status der Jodprobe aus DB lesen
+            # Status der Abfrage aus DB lesen
             self.dbCursor.execute("SELECT State FROM Status WHERE StateName = 'Modus'")
             self.jResult = self.dbCursor.fetchone()
             
@@ -282,16 +285,13 @@ class Brew:
             elif self.jResult[0] == 'Automatic':
                 logger.info("Eingabe der Werte über DB")
                 self.result = False
-    
-        if self.result == False:
-            # Steuerungswerte sollen über die Datenbank eingegeben werden
-            return False
-        else:
-            # Steuerungswerte sollen manuell eingegeben werden
-            return True
+
+        return self.result
+        
         
     def getValue(self, textOne, textTwo, startVal, minVal):
-        self.AlteZahl = 0
+        # aktuelle Stellung des Encoders lesen - Nullpunkt setzen
+        self.AlteZahl = self.dreh.read()
         # Status des Push Buttons setzen
         self.buttonState = False
         # Default Wert für die Eingabe
@@ -319,7 +319,7 @@ class Brew:
             except:
                 logging.error(f"Fehler beim Schreiben auf Display: {traceback.format_exc()}")
                 
-            time.sleep(0.25)
+            time.sleep(0.5)
         
         return self.mNum
         
