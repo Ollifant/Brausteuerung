@@ -38,6 +38,7 @@ import Encoder
 serial = i2c(port=1, address=0x3C)
 device = sh1106(serial)
 oled_font = ImageFont.truetype('FreeSans.ttf', 14)
+logo = Image.open('hop3.png').convert("RGBA")
 
 # GPIO ueber Nummern ansprechen
 GPIO.setmode(GPIO.BCM)
@@ -217,7 +218,7 @@ class Brew:
             self.dbCursor.execute("INSERT INTO Status VALUES (:Modus, :Status)", {'Modus' : "Modus", 'Status' : "None"})
             
 
-    def checkManualInput(self):
+    def checkInputMode(self):
         # Das Ergebnis, ob die Werte manuell oder automatisch eingegeben werden sollen,
         # kann über den Schalter des Encoders oder über die Datenbank eingegeben werden
         
@@ -286,6 +287,9 @@ class Brew:
                 logger.info("Eingabe der Werte über DB")
                 self.result = False
 
+        # Bestätigungston
+        self.beeper.makeBeep(0.1, 0)
+        
         return self.result
         
         
@@ -303,7 +307,7 @@ class Brew:
             self.DrehZahl = self.dreh.read()
             # Encoder zählt in 4er Schritten
             self.mNum = int(self.mNum + ((self.DrehZahl - self.AlteZahl) / 4))
-            # Eingabe soll nichtz kleiner als Null werden
+            # Eingabe soll nichtz kleiner als minVal werden
             if (self.mNum < minVal):
                 self.mNum = minVal
                 self.beeper.makeBeep(0.1, 0.1)
@@ -319,20 +323,41 @@ class Brew:
             except:
                 logging.error(f"Fehler beim Schreiben auf Display: {traceback.format_exc()}")
                 
-            time.sleep(0.5)
+            time.sleep(1.0)
+        
+        # Bestätigungston
+        self.beeper.makeBeep(0.1, 0)
         
         return self.mNum
         
+    def displayHop(self):
+        # Zeit überbrücken, bis der Schalter nicht mehr prellt
+        self.newPic = Image.new(logo.mode, logo.size, (0,) * 4)
+        self.background = Image.new("RGBA", device.size, "black")
+        self.posn = ((device.width - logo.width) // 2, 0)
+        self.background.paste(logo, self.posn)
+        device.display(self.background.convert(device.mode))
+
+        for self.angle in range(0, 360, 15):
+            self.rotation = logo.rotate(self.angle, resample=Image.BILINEAR)
+            self.img = Image.composite(self.rotation, self.newPic, self.rotation)
+            self.background.paste(self.img, self.posn)
+            device.display(self.background.convert(device.mode))
+                
     def manualInput(self):
         logger.info("Temperatur & Dauer manuell eingeben")
         # Alte Werte löschen
         self.dbCursor.execute("DELETE FROM Rasten")
-        
+        # Prellzeit überbrücken
+        self.displayHop()
         # Eingabe - Temperatur
         self.mTemp = self.getValue("Temperatur", "Grad", 20, 10)
-        
+        # Prellzeit überbrücken
+        self.displayHop()
         #Eingabe - Dauer
         self.mDur = self.getValue("Dauer", "Minuten", 2, 1)
+        # Prellzeit überbrücken
+        self.displayHop()
         
         # Werte in Datenbank/Tabelle für die Meßwerte speichern
         self.dbCursor.execute("""INSERT INTO Rasten VALUES
@@ -361,6 +386,9 @@ class Brew:
         # Der buttonState wird in der Interupt-Routine geändert
         while (self.buttonState != True):
             self.beeper.makeBeep(0.5, 2.0)
+            
+        # Bestätigungston
+        self.beeper.makeBeep(0.1, 0)
         
     def wait4go(self):
         # Prüfen, ob Braudatenbank aktualisiert wurde
@@ -724,7 +752,7 @@ brew = Brew(redGPIO, blueGPIO, beepGPIO, encoderDrehGPIO_1, encoderDrehGPIO_2, e
 # Brauprogramm ablaufen lassen
 if brew.importConfig() == True:
     # Auswahl zwischen manueller oder externer Eingabe der Steuerungsdaten
-    if brew.checkManualInput() == True:
+    if brew.checkInputMode() == True:
         # Manual Input (Temperature & Duration)
         brew.manualInput()
         
@@ -732,6 +760,8 @@ if brew.importConfig() == True:
     brew.mashing()
     # User Input: Ende bestätigen
     brew.wait4end()
+    # Verabschiedung
+    brew.displayHop()
     logger.info("Fertig")
 else:
     logger.info("Konfiguration ungültig")
